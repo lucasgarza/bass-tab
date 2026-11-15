@@ -131,6 +131,9 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 #micMsg{margin:8px 2px 14px;line-height:1.45}
 
 .rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.oct .fold-btn{width:auto;padding:8px 12px;font-size:14px}
+.oct .fold-btn.on{background:rgba(245,165,36,.14);border-color:var(--accent);color:var(--text)}
+.oct{flex-wrap:wrap}
 .rec-grid select,.rec-grid input{width:100%}
 .rec-go{background:var(--warn);border-color:var(--warn);color:#1b0e0c;font-weight:700;padding:15px}
 .rec-state{font-size:28px;font-weight:700;text-align:center;margin:6px 0 12px}
@@ -218,7 +221,8 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
         <label class="field">Time<select id="recTs"><option value="4/4">4/4</option><option value="3/4">3/4</option><option value="2/4">2/4</option><option value="6/8">6/8</option></select></label>
         <label class="field">Length<select id="recBars"><option value="2">2 bars</option><option value="4" selected>4 bars</option><option value="8">8 bars</option><option value="16">16 bars</option><option value="0">Until I tap Stop</option></select></label>
         <label class="field">Snap notes to<select id="recSnap"><option value="2">8th notes</option><option value="4" selected>16th notes</option><option value="3">8th triplets</option><option value="12">16ths + triplets</option></select></label>
-        <label class="field" style="grid-column:1/-1">Your tuning<select id="recTuning"><option value="auto">Detect from notes</option></select></label>
+        <label class="field">Your tuning<select id="recTuning"><option value="auto">Detect from notes</option></select></label>
+        <label class="field">Octave<select id="recOct"><option value="0">As heard</option><option value="-1">Down 1 octave</option><option value="-2">Down 2 octaves</option><option value="fold">Lowest possible</option></select></label>
       </div>
       <label class="tg" style="margin:4px 0 10px"><input type="checkbox" id="recClick" checked><span>Metronome click while recording</span></label>
       <div class="muted small" style="line-height:1.45;margin-bottom:12px">You get a one-bar count-in. Headphones keep the click out of the recording; a plug-in bass interface picks up low notes far better than the phone mic.</div>
@@ -249,7 +253,7 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
       <label class="field">Artist<input type="text" id="impArtist"></label>
       <div id="impTracksWrap"><div class="label-row"><span>Track</span></div><div class="tracks" id="impTracks"></div></div>
       <dl class="facts" id="impFacts"></dl>
-      <div class="oct" id="impOct" hidden><span class="muted">Octave</span><button id="octDown">−</button><b id="octVal">0</b><button id="octUp">+</button><span class="muted small">Frets were chosen by the app</span></div>
+      <div class="oct" id="impOct" hidden><span class="muted">Octave</span><button id="octDown">−</button><b id="octVal">0</b><button id="octUp">+</button><button id="octFold" class="fold-btn" hidden>Lowest</button><span class="muted small" id="octNote">Frets were chosen by the app</span></div>
       <div class="oct" id="impNudge" hidden><span class="muted">Timing</span><button id="nudgeDown">−</button><b id="nudgeVal">0 ms</b><button id="nudgeUp">+</button><span class="muted small">If notes land early or late</span></div>
       <button id="hearTake" class="wide" hidden style="margin-bottom:12px">▶ Hear the recording</button>
       <ul class="warns e" id="impErrs" hidden></ul>
@@ -324,7 +328,7 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 })();
 (() => {
 'use strict';
-const APP_VERSION = '2026-11-15e';
+const APP_VERSION = '2026-11-15f';
 document.querySelectorAll('.appVer').forEach(el => { el.textContent = APP_VERSION; });
 /* =====================================================================
    SONG FORMAT (schemaVersion 1) — all beat values are in quarter notes
@@ -1364,6 +1368,9 @@ function convertAndShow(first){
     <dt>Notes</dt><dd>${nNotes}</dd>`;
   $('impOct').hidden = !imp.pitchAssigned;
   $('octVal').textContent = imp.octave > 0 ? '+' + imp.octave : imp.octave;
+  $('octFold').hidden = imp.kind !== 'rec';
+  $('octFold').classList.toggle('on', !!imp.fold);
+  $('octNote').textContent = imp.kind === 'rec' ? '“Lowest” drops each note to the lowest octave your bass can play' : 'Frets were chosen by the app';
   $('impNudge').hidden = $('hearTake').hidden = imp.kind !== 'rec';
   $('impHead').textContent = imp.kind === 'rec' ? 'Review recording' : 'Import song';
   if (imp.kind === 'rec') $('nudgeVal').textContent = `${imp.nudgeMs > 0 ? '+' : ''}${imp.nudgeMs} ms`;
@@ -1378,8 +1385,15 @@ $('impTracks').addEventListener('click', e => {
   const o = e.target.closest('.track-opt'); if (!o) return;
   imp.track = +o.dataset.i; imp.octave = 0; imp.octaveAuto = null; convertAndShow(false);
 });
-$('octDown').addEventListener('click', () => { imp.octave--; convertAndShow(false); });
-$('octUp').addEventListener('click', () => { imp.octave++; convertAndShow(false); });
+// remember the octave choice for future recordings (the mic usually errs the same way every time)
+function rememberRecOctave(){
+  if (!imp || imp.kind !== 'rec') return;
+  const v = imp.fold ? 'fold' : String(clamp(imp.octave, -2, 0));
+  if ([...$('recOct').options].some(o => o.value === v)){ $('recOct').value = v; saveRecPrefs(); }
+}
+$('octDown').addEventListener('click', () => { imp.octave--; rememberRecOctave(); convertAndShow(false); });
+$('octUp').addEventListener('click', () => { imp.octave++; rememberRecOctave(); convertAndShow(false); });
+$('octFold').addEventListener('click', () => { imp.fold = !imp.fold; if (imp.fold) imp.octave = 0; rememberRecOctave(); convertAndShow(false); });
 $('impCancel').addEventListener('click', () => { stopTakePlayback(); imp = null; closeSheet('impSheet'); renderLibrary(); openSheet('libSheet'); });
 $('impSave').addEventListener('click', () => {
   if (!imp || !imp.song) return;
@@ -1401,7 +1415,8 @@ $('impSave').addEventListener('click', () => {
 const BP_MODEL_URL = 'vendor/basic-pitch-model/model.json';
 const REC_TUNINGS = TUNING_PRESETS.filter(([n]) => ['Standard', 'Drop D', 'Half step down', 'D standard', 'Drop C', '5-string standard'].includes(n));
 $('recTuning').innerHTML += REC_TUNINGS.map(([n]) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
-const recPrefs = Object.assign({ bpm: 90, ts: '4/4', bars: '4', snap: '4', tuning: 'auto', click: true }, saved.rec || {});
+const recPrefs = Object.assign({ bpm: 90, ts: '4/4', bars: '4', snap: '4', tuning: 'auto', click: true, octave: '0' }, saved.rec || {});
+$('recOct').value = recPrefs.octave;
 $('recBpm').value = recPrefs.bpm; $('recTs').value = recPrefs.ts; $('recBars').value = recPrefs.bars;
 $('recSnap').value = recPrefs.snap; $('recTuning').value = recPrefs.tuning; $('recClick').checked = recPrefs.click;
 
@@ -1424,7 +1439,7 @@ function openRecorder(){
 }
 function saveRecPrefs(){
   const s = store.get();
-  s.rec = { bpm: +$('recBpm').value || 90, ts: $('recTs').value, bars: $('recBars').value, snap: $('recSnap').value, tuning: $('recTuning').value, click: $('recClick').checked };
+  s.rec = { bpm: +$('recBpm').value || 90, ts: $('recTs').value, bars: $('recBars').value, snap: $('recSnap').value, tuning: $('recTuning').value, click: $('recClick').checked, octave: $('recOct').value };
   store.set(s);
 }
 
@@ -1550,7 +1565,8 @@ async function finishRecording(r){
     rec = null;
     closeSheet('recSheet');
     const d = new Date();
-    imp = { kind: 'rec', rec: r, file: null, ext: '', octave: 0, nudgeMs: 0, tracks: [],
+    const octPref = $('recOct').value;
+    imp = { kind: 'rec', rec: r, file: null, ext: '', octave: octPref === 'fold' ? 0 : +octPref || 0, fold: octPref === 'fold', nudgeMs: 0, tracks: [],
             title: `Riff ${d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` };
     $('impFmt').textContent = 'recording';
     openSheet('impSheet');
@@ -1637,13 +1653,22 @@ function convertRec(){
   for (const n of notes){ const k = Math.round(n.s * 1000); const o = bySlot.get(k); if (!o || n.amp > o.amp) bySlot.set(k, n); }
   notes = [...bySlot.values()].sort((a, b) => a.s - b.s);
   notes.forEach((n, i) => { const next = notes[i + 1]; if (next) n.e = Math.min(n.e, next.s); n.e = Math.min(n.e, nBars * barLen); });
+  // Octave: shift everything by imp.octave, then (Lowest mode) drop each note to the lowest octave the bass can play.
   const k = imp.octave;
-  let strings;
-  if (r.tuning !== 'auto') strings = TUNING_PRESETS.find(([n]) => n === r.tuning)[1];
-  else strings = notes.length ? pickTuningForPitches(Math.min(...notes.map(n => n.pitch + k * 12))) : ['G2','D2','A1','E1'];
+  const presetStrings = r.tuning !== 'auto' ? TUNING_PRESETS.find(([n]) => n === r.tuning)[1] : null;
+  const floor = presetStrings ? Math.min(...presetStrings.map(midiOf)) : midiOf('E1');
+  let folded = 0;
+  const adj = p => {
+    p += k * 12;
+    if (imp.fold){ const p0 = p; while (p - 12 >= floor) p -= 12; while (p < floor) p += 12; if (p !== p0) folded++; }
+    return p;
+  };
+  notes.forEach(n => { n.p = adj(n.pitch); });
+  if (imp.fold && folded) warns.push(`“Lowest” moved ${folded} note(s) to the lowest octave your bass can play them in.`);
+  let strings = presetStrings || (notes.length ? pickTuningForPitches(Math.min(...notes.map(n => n.p))) : ['G2','D2','A1','E1']);
   const measures = Array.from({ length: nBars }, (_, i) => ({ n: i + 1, notes: [] }));
   const pitched = notes.map(n => { const mi = Math.min(nBars - 1, Math.floor(n.s / barLen + 1e-9));
-    return { mi, beat: Math.round((n.s - mi * barLen) * 1000) / 1000, dur: Math.round((n.e - n.s) * 1000) / 1000, absBeat: n.s, pitch: n.pitch + k * 12, flags: {} }; });
+    return { mi, beat: Math.round((n.s - mi * barLen) * 1000) / 1000, dur: Math.round((n.e - n.s) * 1000) / 1000, absBeat: n.s, pitch: n.p, flags: {} }; });
   const res = assignFrets(pitched, strings.map(midiOf));
   res.notes.forEach(p => measures[p.mi].notes.push({ string: p.string, fret: p.fret, beat: p.beat, dur: Math.max(grid, p.dur) }));
   measures.forEach(m => m.notes.sort((a, b) => a.beat - b.beat || a.string - b.string));
@@ -1677,7 +1702,7 @@ $('recClose').addEventListener('click', () => {
   if (rec && !rec.stopped){ teardownRecording(rec); rec = null; }
   closeSheet('recSheet'); renderLibrary(); openSheet('libSheet');
 });
-for (const id of ['recBpm', 'recTs', 'recBars', 'recSnap', 'recTuning', 'recClick']) $(id).addEventListener('change', saveRecPrefs);
+for (const id of ['recBpm', 'recTs', 'recBars', 'recSnap', 'recTuning', 'recClick', 'recOct']) $(id).addEventListener('change', saveRecPrefs);
 
 /* ---------- tuner ---------- */
 let micStream = null, analyser = null, tunerTimer = null, tbuf = null, readings = [];
