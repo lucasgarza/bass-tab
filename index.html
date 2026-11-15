@@ -324,7 +324,7 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 })();
 (() => {
 'use strict';
-const APP_VERSION = '2026-11-15d';
+const APP_VERSION = '2026-11-15e';
 document.querySelectorAll('.appVer').forEach(el => { el.textContent = APP_VERSION; });
 /* =====================================================================
    SONG FORMAT (schemaVersion 1) — all beat values are in quarter notes
@@ -557,6 +557,44 @@ function ensureAudio(){
   master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
   makeBuses();
   return ctx;
+}
+/* Microphone. iOS (Safari and Chrome both use WebKit) won't hand out the mic while the page's audio
+   session is "playback", which the app uses so sound plays with the silent switch on.
+   Switch to "play-and-record" while the mic is open, and back afterwards. */
+
+async function getMic(){
+  if (window.self !== window.top) throw Object.assign(new Error('embedded'), { name: 'EmbeddedFrame' });
+  if (!window.isSecureContext) throw Object.assign(new Error('insecure'), { name: 'InsecureContext' });
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('unsupported'), { name: 'Unsupported' });
+  try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch(e){}
+  if (ctx && ctx.state === 'running'){ try { await ctx.suspend(); } catch(e){} }
+  let stream;
+  try {
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+    catch(e){
+      if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });  // retry with plain settings
+    }
+  } catch(e){ releaseMicSession(); throw e; }
+  return stream;
+}
+function closeMic(stream){ if (stream) stream.getTracks().forEach(t => t.stop()); releaseMicSession(); }
+function releaseMicSession(){ try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){} }
+function micErrorText(e){
+  const n = (e && e.name) || 'Error';
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const chromeIOS = /CriOS/.test(navigator.userAgent);
+  const fix = ios ? (chromeIOS
+      ? 'On iPhone: Settings › Apps › Chrome › Microphone must be on. Then in Chrome tap ⋯ › Settings › Content Settings (or the lock icon in the address bar) and allow the microphone for this site, then reload.'
+      : 'On iPhone: Settings › Apps › Safari › Microphone should be “Ask” or “Allow”. Also tap “aA” in the address bar › Website Settings › Microphone › Allow, then reload.')
+    : 'Allow microphone access for this site in your browser settings, then reload.';
+  if (n === 'EmbeddedFrame') return 'The microphone is blocked inside this preview. Open https://lucasgarza.github.io/bass-tab/ directly in Safari or Chrome.';
+  if (n === 'InsecureContext') return 'The microphone needs a secure (https) page. Open https://lucasgarza.github.io/bass-tab/.';
+  if (n === 'Unsupported') return 'This browser doesn’t offer microphone access to web pages. Update iOS, or use Safari.';
+  if (n === 'NotAllowedError' || n === 'SecurityError') return `Microphone permission was denied (${n}). ${fix}`;
+  if (n === 'NotFoundError') return 'No microphone was found (NotFoundError). If a bass interface is plugged in, unplug and replug it.';
+  if (n === 'NotReadableError' || n === 'AbortError') return `The microphone is busy (${n}). Close other apps using it (calls, voice memos, other tabs), then try again.`;
+  return `The microphone couldn’t start (${n}: ${e && e.message}). ${fix}`;
 }
 function makeBuses(){
   clickBus = ctx.createGain(); clickBus.gain.value = Math.pow(vol / 100, 1.5); clickBus.connect(master);
@@ -1396,15 +1434,10 @@ async function startRecording(){
   const [beats, beatUnit] = $('recTs').value.split('/').map(Number);
   const ts = { beats, beatUnit };
   const bars = +$('recBars').value;
-  ensureAudio(); if (ctx.resume) await ctx.resume();
   let stream;
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unsupported');
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  } catch(e){
-    recMsg('The microphone isn’t available. Open the app from its GitHub Pages address in Safari and allow microphone access (Settings › Safari › Microphone).', true);
-    return;
-  }
+  try { stream = await getMic(); }
+  catch(e){ recMsg(micErrorText(e), true); return; }
+  ensureAudio(); if (ctx.resume) await ctx.resume();
   const src = ctx.createMediaStreamSource(stream);
   const sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
   const r = rec = { bpm, ts, bars, stream, src, sink, chunks: [], firstT: null, peak: 0, recentPeak: 0,
@@ -1480,7 +1513,7 @@ function teardownRecording(r){
   clearInterval(r.timer);
   try { r.src.disconnect(); r.node.disconnect(); r.sink.disconnect(); } catch(e){}
   if (r.node && r.node.port) r.node.port.onmessage = null;
-  r.stream.getTracks().forEach(t => t.stop());
+  closeMic(r.stream);
   killBuses(); releaseWake();
 }
 async function finishRecording(r){
@@ -1662,15 +1695,10 @@ function openTuner(){
 }
 function closeTuner(){ stopMic(); closeSheet('sheet'); }
 async function startMic(){
-  ensureAudio(); if (ctx.resume) await ctx.resume();
   $('micMsg').textContent = '';
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unsupported');
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
-  } catch(err){
-    $('micMsg').textContent = 'The microphone isn’t available. Open this page in Safari from its own web address and allow microphone access (Settings › Safari › Microphone if you denied it). The reference tones below still work.';
-    return;
-  }
+  try { micStream = await getMic(); }
+  catch(err){ $('micMsg').textContent = micErrorText(err) + ' The reference tones below still work.'; return; }
+  ensureAudio(); if (ctx.resume) await ctx.resume();
   const src = ctx.createMediaStreamSource(micStream);
   analyser = ctx.createAnalyser(); analyser.fftSize = 8192;
   src.connect(analyser);
@@ -1679,7 +1707,7 @@ async function startMic(){
   $('micBtn').textContent = 'Stop mic';
 }
 function stopMic(){
-  if (micStream){ micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (micStream){ closeMic(micStream); micStream = null; }
   clearInterval(tunerTimer); tunerTimer = null; analyser = null;
   $('micBtn').textContent = 'Start mic tuner';
   setNeedle(null);
