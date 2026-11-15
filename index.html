@@ -22,7 +22,7 @@ main{
 }
 .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 .head{grid-area:head;display:flex;gap:8px;align-items:center}
-select,input[type=text],input[type=search]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px;max-width:100%;font-family:inherit}
+select,input[type=text],input[type=search],input[type=number]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px;max-width:100%;font-family:inherit}
 button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:15px;cursor:pointer;touch-action:manipulation}
 button:active{transform:scale(.97)}
 button:disabled{opacity:.45}
@@ -130,6 +130,15 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 .refs button small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
 #micMsg{margin:8px 2px 14px;line-height:1.45}
 
+.rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.rec-grid select,.rec-grid input{width:100%}
+.rec-go{background:var(--warn);border-color:var(--warn);color:#1b0e0c;font-weight:700;padding:15px}
+.rec-state{font-size:28px;font-weight:700;text-align:center;margin:6px 0 12px}
+.rec-dots .dot{width:16px;height:16px}
+.rec-dots .dot.first{width:20px;height:20px}
+.level{height:10px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);overflow:hidden;margin-top:12px}
+.level div{height:100%;width:0;background:var(--ok);transition:width .08s}
+#recMsg.err{color:var(--warn)}
 #toast{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 90px);z-index:50;background:#2a1714;border:1px solid var(--warn);color:#f6c7c0;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.4;word-break:break-word}
 @media (orientation:landscape) and (max-height:560px){
   main{grid-template-columns:minmax(0,1fr) 172px;grid-template-rows:auto minmax(0,1fr) auto;
@@ -184,7 +193,7 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
   <div class="sheet-inner">
     <div class="label-row"><span class="sheet-title">Song library</span><button id="closeLib" class="pill">Done</button></div>
     <div class="lib-actions">
-      <button id="importBtn" class="wide pill accent">Import a file…</button>
+      <div class="btn-row"><button id="importBtn" class="wide pill accent">Import a file…</button><button id="recBtn" class="wide pill">● Record a riff</button></div>
       <div class="muted small" style="text-align:center">Guitar Pro (.gp .gp3 .gp4 .gp5 .gpx) · MusicXML (.musicxml .xml .mxl) · MIDI (.mid) · song JSON</div>
       <input type="file" id="fileIn" hidden>
     </div>
@@ -199,10 +208,41 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
   </div>
 </div>
 
+<!-- record sheet -->
+<div id="recSheet" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="label-row"><span class="sheet-title">Record a riff</span><button id="recClose" class="pill">Close</button></div>
+    <div id="recSetup">
+      <div class="rec-grid">
+        <label class="field">Tempo (BPM)<input type="number" id="recBpm" min="40" max="240" value="90" inputmode="numeric"></label>
+        <label class="field">Time<select id="recTs"><option value="4/4">4/4</option><option value="3/4">3/4</option><option value="2/4">2/4</option><option value="6/8">6/8</option></select></label>
+        <label class="field">Length<select id="recBars"><option value="2">2 bars</option><option value="4" selected>4 bars</option><option value="8">8 bars</option><option value="16">16 bars</option><option value="0">Until I tap Stop</option></select></label>
+        <label class="field">Snap notes to<select id="recSnap"><option value="2">8th notes</option><option value="4" selected>16th notes</option><option value="3">8th triplets</option><option value="12">16ths + triplets</option></select></label>
+        <label class="field" style="grid-column:1/-1">Your tuning<select id="recTuning"><option value="auto">Detect from notes</option></select></label>
+      </div>
+      <label class="tg" style="margin:4px 0 10px"><input type="checkbox" id="recClick" checked><span>Metronome click while recording</span></label>
+      <div class="muted small" style="line-height:1.45;margin-bottom:12px">You get a one-bar count-in. Headphones keep the click out of the recording; a plug-in bass interface picks up low notes far better than the phone mic.</div>
+      <button id="recGo" class="wide pill rec-go">● Start recording</button>
+    </div>
+    <div id="recLive" hidden>
+      <div id="recState" class="rec-state">Count-in</div>
+      <div class="beats rec-dots" id="recDots"></div>
+      <div class="level"><div id="recLevel"></div></div>
+      <div class="muted small" id="recHint" style="text-align:center;min-height:18px;margin:8px 0 14px"></div>
+      <button id="recStop" class="wide pill accent">■ Stop</button>
+    </div>
+    <div id="recBusy" hidden>
+      <div class="muted" style="margin:6px 0 10px"><span class="spinner"></span><span id="recBusyText">Working…</span></div>
+      <div class="level"><div id="recProg" style="background:var(--accent)"></div></div>
+    </div>
+    <div id="recMsg" class="small" style="margin-top:10px;line-height:1.45"></div>
+  </div>
+</div>
+
 <!-- import preview sheet -->
 <div id="impSheet" class="sheet" hidden>
   <div class="sheet-inner">
-    <div class="label-row"><span class="sheet-title">Import song</span><span class="badge" id="impFmt"></span></div>
+    <div class="label-row"><span class="sheet-title" id="impHead">Import song</span><span class="badge" id="impFmt"></span></div>
     <div id="impLoading" class="muted" hidden><span class="spinner"></span><span id="impLoadingText">Reading file…</span></div>
     <div id="impBody" hidden>
       <label class="field">Title<input type="text" id="impTitle"></label>
@@ -210,6 +250,8 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
       <div id="impTracksWrap"><div class="label-row"><span>Track</span></div><div class="tracks" id="impTracks"></div></div>
       <dl class="facts" id="impFacts"></dl>
       <div class="oct" id="impOct" hidden><span class="muted">Octave</span><button id="octDown">−</button><b id="octVal">0</b><button id="octUp">+</button><span class="muted small">Frets were chosen by the app</span></div>
+      <div class="oct" id="impNudge" hidden><span class="muted">Timing</span><button id="nudgeDown">−</button><b id="nudgeVal">0 ms</b><button id="nudgeUp">+</button><span class="muted small">If notes land early or late</span></div>
+      <button id="hearTake" class="wide" hidden style="margin-bottom:12px">▶ Hear the recording</button>
       <ul class="warns e" id="impErrs" hidden></ul>
       <ul class="warns w" id="impWarns" hidden></ul>
     </div>
@@ -282,7 +324,7 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 })();
 (() => {
 'use strict';
-const APP_VERSION = '2026-11-15c';
+const APP_VERSION = '2026-11-15d';
 document.querySelectorAll('.appVer').forEach(el => { el.textContent = APP_VERSION; });
 /* =====================================================================
    SONG FORMAT (schemaVersion 1) — all beat values are in quarter notes
@@ -899,7 +941,7 @@ new ResizeObserver(sizeCanvas).observe($('tabwrap'));
 
 /* ---------- library UI ---------- */
 function libMsg(text, isErr){ const m = $('libMsg'); m.textContent = text || ''; m.className = isErr ? 'err' : 'muted'; }
-const SRC_LABEL = { builtin: 'Sample', guitarpro: 'Guitar Pro', musicxml: 'MusicXML', midi: 'MIDI', json: 'JSON', repo: 'Repo' };
+const SRC_LABEL = { builtin: 'Sample', guitarpro: 'Guitar Pro', musicxml: 'MusicXML', midi: 'MIDI', json: 'JSON', repo: 'Repo', recording: 'Recorded' };
 function renderLibrary(){
   const q = $('libSearch').value.trim().toLowerCase();
   const list = allSongs().filter(s => !q || `${s.title} ${s.artist}`.toLowerCase().includes(q));
@@ -972,7 +1014,8 @@ async function loadRepoSongs(){
 const LIBS = {
   alphaTab: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.9.0/dist/alphaTab.min.js',
   Midi:     'https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js',
-  fflate:   'https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js'
+  fflate:   'https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js',
+  BasicPitchLib: 'vendor/basicpitch.min.js'   // hosted in this repo (see vendor/README.md)
 };
 const loading = {};
 function loadLib(name){
@@ -1255,6 +1298,7 @@ function convertAndShow(first){
   try {
     if (imp.kind === 'score') result = convertScore();
     else if (imp.kind === 'midi') result = convertMidi();
+    else if (imp.kind === 'rec') result = convertRec();
     else result = { song: JSON.parse(JSON.stringify(imp.json)), warns: [] };
   } catch(err){ return showImportError('Something in this file couldn’t be converted: ' + (err.message || err)); }
   const s = result.song;
@@ -1282,6 +1326,9 @@ function convertAndShow(first){
     <dt>Notes</dt><dd>${nNotes}</dd>`;
   $('impOct').hidden = !imp.pitchAssigned;
   $('octVal').textContent = imp.octave > 0 ? '+' + imp.octave : imp.octave;
+  $('impNudge').hidden = $('hearTake').hidden = imp.kind !== 'rec';
+  $('impHead').textContent = imp.kind === 'rec' ? 'Review recording' : 'Import song';
+  if (imp.kind === 'rec') $('nudgeVal').textContent = `${imp.nudgeMs > 0 ? '+' : ''}${imp.nudgeMs} ms`;
   const e = $('impErrs'), w = $('impWarns');
   e.hidden = !v.errors.length; e.innerHTML = v.errors.map(x => `<li>${esc(x)}</li>`).join('');
   const allW = [...result.warns, ...v.warnings];
@@ -1295,19 +1342,309 @@ $('impTracks').addEventListener('click', e => {
 });
 $('octDown').addEventListener('click', () => { imp.octave--; convertAndShow(false); });
 $('octUp').addEventListener('click', () => { imp.octave++; convertAndShow(false); });
-$('impCancel').addEventListener('click', () => { imp = null; closeSheet('impSheet'); renderLibrary(); openSheet('libSheet'); });
+$('impCancel').addEventListener('click', () => { stopTakePlayback(); imp = null; closeSheet('impSheet'); renderLibrary(); openSheet('libSheet'); });
 $('impSave').addEventListener('click', () => {
   if (!imp || !imp.song) return;
   const s = normalizeSong(imp.song);
   s.title = $('impTitle').value.trim() || s.title || 'Untitled';
   s.artist = $('impArtist').value.trim();
   if (imp.kind === 'json' && s.source.type === 'builtin') s.source = { type: 'json', file: imp.file };
+  stopTakePlayback();
   s.id = uniqueId(s.id && imp.kind === 'json' ? s.id : `${s.artist ? s.artist + ' ' : ''}${s.title}`);
   userSongs.push(s);
   if (!saveLibrary()){ userSongs.pop(); closeSheet('impSheet'); openSheet('libSheet'); return; }
   imp = null; closeSheet('impSheet');
   loadSong(s); persist();
 });
+
+/* =====================================================================
+   RECORD A RIFF: mic → Basic Pitch (on device) → cleanup → snap → tab
+   ===================================================================== */
+const BP_MODEL_URL = 'vendor/basic-pitch-model/model.json';
+const REC_TUNINGS = TUNING_PRESETS.filter(([n]) => ['Standard', 'Drop D', 'Half step down', 'D standard', 'Drop C', '5-string standard'].includes(n));
+$('recTuning').innerHTML += REC_TUNINGS.map(([n]) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+const recPrefs = Object.assign({ bpm: 90, ts: '4/4', bars: '4', snap: '4', tuning: 'auto', click: true }, saved.rec || {});
+$('recBpm').value = recPrefs.bpm; $('recTs').value = recPrefs.ts; $('recBars').value = recPrefs.bars;
+$('recSnap').value = recPrefs.snap; $('recTuning').value = recPrefs.tuning; $('recClick').checked = recPrefs.click;
+
+let rec = null, bpModel = null, workletReady = null;
+const WORKLET_SRC = `class BtRec extends AudioWorkletProcessor{
+  constructor(){ super(); this.b = new Float32Array(4096); this.n = 0; this.t = 0; }
+  process(inputs){ const c = inputs[0] && inputs[0][0]; if (!c) return true;
+    if (this.n === 0) this.t = currentTime;
+    this.b.set(c, this.n); this.n += c.length;
+    if (this.n >= 4096){ this.port.postMessage({ t: this.t, d: this.b.slice(0, this.n) }); this.n = 0; }
+    return true; } }
+registerProcessor('bt-rec', BtRec);`;
+function recView(which){ for (const id of ['recSetup', 'recLive', 'recBusy']) $(id).hidden = id !== which; }
+function recMsg(text, isErr){ const m = $('recMsg'); m.textContent = text || ''; m.className = 'small' + (isErr ? ' err' : ' muted'); }
+function openRecorder(){
+  if (playing) stop();
+  if (micStream) stopMic();
+  recView('recSetup'); recMsg('');
+  closeSheet('libSheet'); openSheet('recSheet');
+}
+function saveRecPrefs(){
+  const s = store.get();
+  s.rec = { bpm: +$('recBpm').value || 90, ts: $('recTs').value, bars: $('recBars').value, snap: $('recSnap').value, tuning: $('recTuning').value, click: $('recClick').checked };
+  store.set(s);
+}
+
+async function startRecording(){
+  saveRecPrefs();
+  const bpm = clamp(Math.round(+$('recBpm').value || 90), 40, 240);
+  const [beats, beatUnit] = $('recTs').value.split('/').map(Number);
+  const ts = { beats, beatUnit };
+  const bars = +$('recBars').value;
+  ensureAudio(); if (ctx.resume) await ctx.resume();
+  let stream;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unsupported');
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch(e){
+    recMsg('The microphone isn’t available. Open the app from its GitHub Pages address in Safari and allow microphone access (Settings › Safari › Microphone).', true);
+    return;
+  }
+  const src = ctx.createMediaStreamSource(stream);
+  const sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+  const r = rec = { bpm, ts, bars, stream, src, sink, chunks: [], firstT: null, peak: 0, recentPeak: 0,
+                    snap: +$('recSnap').value, tuning: $('recTuning').value, click: $('recClick').checked, timer: null, stopped: false };
+  const onChunk = (t, d) => {
+    if (r.stopped) return;
+    if (r.firstT === null) r.firstT = t;
+    r.chunks.push(d);
+    let p = 0; for (let i = 0; i < d.length; i++){ const v = Math.abs(d[i]); if (v > p) p = v; }
+    r.recentPeak = Math.max(p, r.recentPeak * 0.85);
+    if (t >= r.gridZero) r.peak = Math.max(r.peak, p);
+  };
+  try {
+    if (!ctx.audioWorklet || !window.AudioWorkletNode) throw new Error('no worklet');
+    if (!workletReady) workletReady = ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' })));
+    await workletReady;
+    r.node = new AudioWorkletNode(ctx, 'bt-rec', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
+    r.node.port.onmessage = e => onChunk(e.data.t, e.data.d);
+  } catch(e){
+    r.node = ctx.createScriptProcessor(4096, 1, 1);
+    r.node.onaudioprocess = e => { const d = new Float32Array(e.inputBuffer.getChannelData(0)); onChunk(ctx.currentTime - d.length / ctx.sampleRate, d); };
+  }
+  src.connect(r.node); r.node.connect(sink);
+
+  // timing grid: one bar of count-in, then the recording
+  const unit = clickUnitOf(ts), cnt = Math.max(1, Math.round(measureLen(ts) / unit));
+  const secPerClick = unit * 60 / bpm, barSec = measureLen(ts) * 60 / bpm;
+  r.t0 = ctx.currentTime + 0.25;
+  r.gridZero = r.t0 + cnt * secPerClick;
+  r.endT = bars ? r.gridZero + bars * barSec : Infinity;
+  r.unit = unit; r.cnt = cnt; r.secPerClick = secPerClick; r.barSec = barSec;
+  r.nextClick = 0; r.pulses = [];
+  const dotBox = $('recDots'); dotBox.innerHTML = '';
+  for (let i = 0; i < Math.min(cnt, 12); i++){ const d = document.createElement('div'); d.className = 'dot' + (i ? '' : ' first'); dotBox.appendChild(d); }
+  recView('recLive'); recMsg(''); $('recState').textContent = 'Count-in'; $('recHint').textContent = 'Get ready…';
+  r.timer = setInterval(() => recTick(r), 30);
+  requestWake();
+  recTick(r);
+  requestAnimationFrame(() => recFrame(r));
+}
+function recTick(r){
+  if (r.stopped) return;
+  const now = ctx.currentTime;
+  while (true){
+    const t = r.t0 + r.nextClick * r.secPerClick;
+    if (t > now + 0.15 || t >= r.endT - 1e-6) break;
+    const bi = r.nextClick % r.cnt, inCount = t < r.gridZero - 1e-6;
+    if (inCount || r.click) click(t, bi === 0 ? 'accent' : inCount ? 'count' : 'beat');
+    r.pulses.push({ t, bi, inCount });
+    r.nextClick++;
+  }
+  if (now >= r.endT + 0.35) finishRecording(r);
+}
+function recFrame(r){
+  if (r.stopped || rec !== r) return;
+  const now = ctx.currentTime;
+  while (r.pulses.length && r.pulses[0].t <= now){
+    const p = r.pulses.shift();
+    for (const d of $('recDots').children) d.classList.remove('on', 'count');
+    const d = $('recDots').children[p.bi]; if (d){ d.classList.add('on'); if (p.inCount) d.classList.add('count'); }
+  }
+  if (now < r.gridZero){ $('recState').textContent = `Count-in ${Math.min(r.cnt, Math.floor((now - r.t0) / r.secPerClick) + 1) || ''}`; }
+  else {
+    const bar = Math.floor((now - r.gridZero) / r.barSec) + 1;
+    $('recState').innerHTML = `<span style="color:var(--warn)">●</span> Bar ${r.bars ? Math.min(bar, r.bars) + ' of ' + r.bars : bar}`;
+    $('recHint').textContent = r.recentPeak < 0.02 ? 'Very quiet — play closer to the phone' : r.recentPeak > 0.98 ? 'Too loud — it may distort' : 'Recording…';
+  }
+  $('recLevel').style.width = Math.min(100, Math.round(Math.sqrt(r.recentPeak) * 100)) + '%';
+  requestAnimationFrame(() => recFrame(r));
+}
+function teardownRecording(r){
+  r.stopped = true;
+  clearInterval(r.timer);
+  try { r.src.disconnect(); r.node.disconnect(); r.sink.disconnect(); } catch(e){}
+  if (r.node && r.node.port) r.node.port.onmessage = null;
+  r.stream.getTracks().forEach(t => t.stop());
+  killBuses(); releaseWake();
+}
+async function finishRecording(r){
+  if (r.stopped) return;
+  const stoppedAt = ctx.currentTime;
+  teardownRecording(r);
+  { // detect dropped audio: captured samples vs. elapsed clock time
+    let got = 0; for (const c of r.chunks) got += c.length;
+    const expected = (stoppedAt - (r.firstT ?? stoppedAt)) * ctx.sampleRate;
+    r.dropRatio = expected > 0 ? got / expected : 1;
+  }
+  if (stoppedAt < r.gridZero + 0.3 || !r.chunks.length){ recView('recSetup'); recMsg('Stopped during the count-in, so there was nothing to keep.'); rec = null; return; }
+  if (!r.bars) r.barsUsed = Math.max(1, Math.ceil((stoppedAt - r.gridZero) / r.barSec - 0.15));
+  recView('recBusy');
+  try {
+    $('recBusyText').textContent = 'Preparing audio…'; $('recProg').style.width = '5%';
+    const audio = await to22k(r);
+    $('recBusyText').textContent = bpModel ? 'Finding notes…' : 'Downloading the note detector (first time only, about 2 MB)…';
+    const lib = await loadLib('BasicPitchLib');
+    if (!bpModel){
+      try { await lib.tf.setBackend('webgl'); } catch(e){ try { await lib.tf.setBackend('cpu'); } catch(_){} }
+      await lib.tf.ready();
+      bpModel = new lib.BasicPitch(lib.tf.loadGraphModel(new URL(BP_MODEL_URL, location.href).href));
+    }
+    $('recBusyText').textContent = 'Finding notes…';
+    const frames = [], onsets = [], contours = [];
+    await bpModel.evaluateModel(audio.data, (f, o, c) => { frames.push(...f); onsets.push(...o); contours.push(...c); },
+      p => { $('recProg').style.width = Math.round(10 + p * 88) + '%'; });
+    const evts = lib.noteFramesToTime(lib.addPitchBendsToNoteEvents(contours,
+      lib.outputToNotesPoly(frames, onsets, 0.5, 0.3, 11, true, 420, 28, true, 11)));
+    r.rawNotes = evts.map(n => ({ t: n.startTimeSeconds, d: n.durationSeconds, pitch: n.pitchMidi, amp: n.amplitude }));
+    r.audioOffset = audio.offset;   // seconds of audio trimmed from the start before analysis
+    r.take = audio.take;            // for "Hear the recording"
+    rec = null;
+    closeSheet('recSheet');
+    const d = new Date();
+    imp = { kind: 'rec', rec: r, file: null, ext: '', octave: 0, nudgeMs: 0, tracks: [],
+            title: `Riff ${d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` };
+    $('impFmt').textContent = 'recording';
+    openSheet('impSheet');
+    convertAndShow(true);
+  } catch(err){
+    rec = null; recView('recSetup');
+    recMsg('Couldn’t analyze the recording: ' + (err.message || err) + '. Check your internet connection the first time (the note detector downloads once).', true);
+  }
+}
+// Concatenate, trim to the take (from just before bar 1), normalize, resample to 22,050 Hz mono.
+async function to22k(r){
+  const sr = ctx.sampleRate;
+  let total = 0; for (const c of r.chunks) total += c.length;
+  const all = new Float32Array(total); let o = 0; for (const c of r.chunks){ all.set(c, o); o += c.length; }
+  const startSec = Math.max(0, r.gridZero - r.firstT - 0.25);
+  const endSec = Math.min(total / sr, (r.bars ? r.endT : r.gridZero + r.barsUsed * r.barSec) - r.firstT + 0.4);
+  const seg = all.subarray(Math.floor(startSec * sr), Math.max(Math.floor(startSec * sr) + 1, Math.floor(endSec * sr)));
+  let peak = 0; for (let i = 0; i < seg.length; i++){ const v = Math.abs(seg[i]); if (v > peak) peak = v; }
+  const gain = peak > 1e-4 ? Math.min(30, 0.9 / peak) : 1;
+  const norm = new Float32Array(seg.length); for (let i = 0; i < seg.length; i++) norm[i] = seg[i] * gain;
+  const take = ctx.createBuffer(1, norm.length, sr); take.copyToChannel(norm, 0);
+  let data;
+  try {
+    const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, Math.ceil(norm.length * 22050 / sr), 22050);
+    const s = off.createBufferSource(); s.buffer = take; s.connect(off.destination); s.start();
+    data = (await off.startRendering()).getChannelData(0);
+  } catch(e){
+    // fallback: box-filter + linear resample
+    const ratio = sr / 22050, n = Math.floor(norm.length / ratio), w = Math.max(1, Math.round(ratio));
+    data = new Float32Array(n);
+    for (let i = 0; i < n; i++){ const c = i * ratio; let s = 0, k = 0; for (let j = Math.floor(c); j < Math.floor(c) + w && j < norm.length; j++){ s += norm[j]; k++; } data[i] = k ? s / k : 0; }
+  }
+  return { data, offset: startSec, take, inputPeak: peak };
+}
+// Bass is one note at a time: drop overtones the model also reports, ghost onsets and very quiet notes.
+function cleanBassNotes(raw){
+  const inRange = raw.filter(x => x.pitch >= 23 && x.pitch <= 67 && x.d >= 0.05).sort((a, b) => a.t - b.t || a.pitch - b.pitch);
+  const clusters = [];
+  for (const x of inRange){
+    const last = clusters[clusters.length - 1];
+    if (last && x.t - last.t < 0.07) last.items.push(x); else clusters.push({ t: x.t, items: [x] });
+  }
+  let kept = clusters.map(c => c.items.reduce((best, x) =>
+    (x.amp > best.amp * 1.15 || (x.amp >= best.amp * 0.85 && x.pitch < best.pitch)) ? x : best));
+  const HARM = [12, 19, 24, 28, 31, 36];
+  kept = kept.filter(n => !kept.some(m => m !== n && m.pitch < n.pitch && HARM.includes(n.pitch - m.pitch) && Math.abs(n.t - m.t) < 0.15 && n.amp < m.amp * 1.2));
+  if (kept.length){
+    const amps = kept.map(n => n.amp).sort((a, b) => a - b), med = amps[Math.floor(amps.length / 2)];
+    kept = kept.filter(n => n.amp >= med * 0.6);
+  }
+  return kept;
+}
+function convertRec(){
+  const r = imp.rec, warns = [];
+  const bpm = r.bpm, ts = r.ts, barLen = measureLen(ts), nBars = r.bars || r.barsUsed;
+  const outLat = ctx ? (ctx.outputLatency || ctx.baseLatency || 0) : 0;
+  const lag = outLat + 0.015 + imp.nudgeMs / 1000;      // speaker delay + mic delay + your nudge
+  const detBias = p => 0.012 + Math.max(0, 38 - p) * 0.004; // the detector needs longer to recognise low notes
+  const grid = 1 / r.snap;
+  // seconds (from start of analyzed audio) → beats from bar 1
+  const toBeat = sec => (r.firstT + r.audioOffset + sec - lag - r.gridZero) * bpm / 60;
+  const cleaned = cleanBassNotes(r.rawNotes).map(n => ({ ...n, t: n.t - detBias(n.pitch) }));
+  // Auto-align (covers speaker / Bluetooth delay): find the shift, up to almost half a beat, that puts
+  // notes on the 8th-note grid and the strongest, longest notes on the beat.
+  const rawBeats = cleaned.map(n => toBeat(n.t));
+  const wts = cleaned.map(n => n.amp * Math.min(1, n.d * bpm / 60));
+  let shift = 0;
+  if (rawBeats.length >= 3){
+    const cost = o => rawBeats.reduce((s, b, i) => {
+      const x = b - o, d8 = x - Math.round(x * 2) / 2, d4 = x - Math.round(x);
+      return s + wts[i] * (d8 * d8 + 0.6 * d4 * d4); }, 0);
+    const c0 = cost(0); let bc = c0;
+    for (let o = -0.45; o <= 0.4501; o += 0.01){ const c = cost(o) + 0.004 * Math.abs(o) * rawBeats.length * (c0 / rawBeats.length + 0.01); if (c < bc){ bc = c; shift = o; } }
+    if (c0 - bc < c0 * 0.2) shift = 0;
+  }
+  imp.debug = { shift, rawBeats: rawBeats.map(b => Math.round(b * 100) / 100) };
+  if (Math.abs(shift) >= 0.02) warns.push(`Timing was shifted ${Math.round(Math.abs(shift) * 60000 / bpm)} ms ${shift > 0 ? 'earlier' : 'later'} to line up with the beat.`);
+  let notes = cleaned.map(n => {
+    const b = toBeat(n.t) - shift, e = toBeat(n.t + n.d) - shift;
+    const s = Math.round(b / grid) * grid;
+    return { s, e: Math.max(s + grid, Math.round(e / grid + 0.3) * grid), pitch: n.pitch, amp: n.amp };
+  }).filter(n => n.s >= 0 && n.s < nBars * barLen - 1e-6);
+  const bySlot = new Map();
+  for (const n of notes){ const k = Math.round(n.s * 1000); const o = bySlot.get(k); if (!o || n.amp > o.amp) bySlot.set(k, n); }
+  notes = [...bySlot.values()].sort((a, b) => a.s - b.s);
+  notes.forEach((n, i) => { const next = notes[i + 1]; if (next) n.e = Math.min(n.e, next.s); n.e = Math.min(n.e, nBars * barLen); });
+  const k = imp.octave;
+  let strings;
+  if (r.tuning !== 'auto') strings = TUNING_PRESETS.find(([n]) => n === r.tuning)[1];
+  else strings = notes.length ? pickTuningForPitches(Math.min(...notes.map(n => n.pitch + k * 12))) : ['G2','D2','A1','E1'];
+  const measures = Array.from({ length: nBars }, (_, i) => ({ n: i + 1, notes: [] }));
+  const pitched = notes.map(n => { const mi = Math.min(nBars - 1, Math.floor(n.s / barLen + 1e-9));
+    return { mi, beat: Math.round((n.s - mi * barLen) * 1000) / 1000, dur: Math.round((n.e - n.s) * 1000) / 1000, absBeat: n.s, pitch: n.pitch + k * 12, flags: {} }; });
+  const res = assignFrets(pitched, strings.map(midiOf));
+  res.notes.forEach(p => measures[p.mi].notes.push({ string: p.string, fret: p.fret, beat: p.beat, dur: Math.max(grid, p.dur) }));
+  measures.forEach(m => m.notes.sort((a, b) => a.beat - b.beat || a.string - b.string));
+  if (!notes.length) warns.push('No bass notes were heard. Play closer to the phone (or plug in), check the level meter moves, and try again.');
+  else warns.push('The app transcribed this by ear — check it. Use Octave if notes are an octave off, Timing if they land early or late, and Hear the recording to compare.');
+  if (r.take && r.peak < 0.03) warns.push('The recording was very quiet, so some notes may be missing.');
+  if (r.dropRatio < 0.97) warns.push(`About ${Math.round((1 - r.dropRatio) * 100)}% of the audio was dropped while recording, so later notes may drift early. Close other apps and try again.`);
+  warns.push(...res.warns);
+  imp.pitchAssigned = true;
+  return { song: {
+    schemaVersion: 1, id: '', title: imp.title, artist: '', source: { type: 'recording', file: null },
+    tuning: { name: tuningNameFor(strings), strings }, timeSignature: ts, tempo: { bpm, changes: [] }, sections: [], measures
+  }, warns };
+}
+let takeSrc = null;
+function stopTakePlayback(){ if (takeSrc){ try { takeSrc.stop(); } catch(e){} takeSrc = null; } $('hearTake').textContent = '▶ Hear the recording'; }
+$('hearTake').addEventListener('click', () => {
+  if (takeSrc){ stopTakePlayback(); return; }
+  if (!imp || !imp.rec || !imp.rec.take) return;
+  ensureAudio(); if (ctx.resume) ctx.resume();
+  takeSrc = ctx.createBufferSource(); takeSrc.buffer = imp.rec.take; takeSrc.connect(master);
+  takeSrc.onended = () => { if (takeSrc) stopTakePlayback(); };
+  takeSrc.start(); $('hearTake').textContent = '■ Stop';
+});
+$('nudgeDown').addEventListener('click', () => { imp.nudgeMs -= 20; convertAndShow(false); });
+$('nudgeUp').addEventListener('click', () => { imp.nudgeMs += 20; convertAndShow(false); });
+$('recBtn').addEventListener('click', openRecorder);
+$('recGo').addEventListener('click', startRecording);
+$('recStop').addEventListener('click', () => { if (rec) finishRecording(rec); });
+$('recClose').addEventListener('click', () => {
+  if (rec && !rec.stopped){ teardownRecording(rec); rec = null; }
+  closeSheet('recSheet'); renderLibrary(); openSheet('libSheet');
+});
+for (const id of ['recBpm', 'recTs', 'recBars', 'recSnap', 'recTuning', 'recClick']) $(id).addEventListener('change', saveRecPrefs);
 
 /* ---------- tuner ---------- */
 let micStream = null, analyser = null, tunerTimer = null, tbuf = null, readings = [];
@@ -1404,7 +1741,7 @@ updatePlayBtn(); syncViewSeg();
 loadSong(song);
 requestAnimationFrame(frame);
 loadRepoSongs();
-window.__bassTab = { get song(){ return song; }, allSongs, validateSong }; // for debugging
+window.__bassTab = { get song(){ return song; }, get imp(){ return imp; }, allSongs, validateSong }; // for debugging
 })();
 </script>
 </body>
