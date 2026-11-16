@@ -37,7 +37,12 @@ button:disabled{opacity:.45}
 .chip b{color:var(--text);font-weight:600}
 .tabwrap{grid-area:tab;position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;touch-action:none;min-height:0}
 canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
-#noteInfo{position:absolute;right:8px;bottom:8px;background:rgba(15,18,22,.88);border:1px solid var(--line);border-radius:10px;padding:5px 9px;font-size:13px;pointer-events:none}
+#noteInfo{position:absolute;right:8px;bottom:8px;background:rgba(15,18,22,.92);border:1px solid var(--line);border-radius:12px;padding:6px 10px;font-size:13px;pointer-events:none;max-width:calc(100% - 16px)}
+#noteInfo.edit{left:8px;pointer-events:auto;padding:10px;background:var(--panel);box-shadow:0 -6px 20px rgba(0,0,0,.45)}
+.note-acts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.note-acts button{padding:9px 2px;font-size:12px;font-weight:600;border-radius:10px}
+.note-acts button:disabled{opacity:1;color:#4b535d;background:#1a1e24;border-color:#242a31}
+#toast.info{background:#14241f;border-color:var(--ok);color:#c9eee2}
 #noteInfo[hidden]{display:none}
 .status{grid-area:status;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;color:var(--muted);padding:0 2px}
 .status b{color:var(--text)}
@@ -131,6 +136,8 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 #micMsg{margin:8px 2px 14px;line-height:1.45}
 
 .rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.edit-grid button{padding:11px 6px;font-size:14px;font-weight:600}
 .oct .fold-btn{width:auto;padding:8px 12px;font-size:14px}
 .oct .fold-btn.on{background:rgba(245,165,36,.14);border-color:var(--accent);color:var(--text)}
 .oct{flex-wrap:wrap}
@@ -167,7 +174,12 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 
   <div class="tabwrap" id="tabwrap">
     <canvas id="tab"></canvas>
-    <div id="noteInfo" hidden></div>
+    <div id="noteInfo" hidden>
+      <div id="noteText"></div>
+      <div class="note-acts" id="noteActs" hidden>
+        <button data-n="down">▼ Octave</button><button data-n="up">▲ Octave</button><button data-n="string">⇄ String</button><button data-n="del" class="danger">Delete</button><button data-n="undo" id="noteUndo">Undo</button>
+      </div>
+    </div>
   </div>
 
   <div class="status">
@@ -289,12 +301,21 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
     </div>
 
     <div class="section">
+      <div class="label-row"><span>Edit this song</span><span class="badge" id="editBadge"></span></div>
+      <div class="edit-grid">
+        <button id="songDown">▼ Octave down</button><button id="songUp">▲ Octave up</button>
+        <button id="songLowest">Lowest possible</button><button id="songUndo">↶ Undo</button>
+      </div>
+      <div class="muted small" id="editMsg" style="margin-top:8px;line-height:1.45">Changes every note. To move a single note, pause and tap it on the tab.</div>
+    </div>
+
+    <div class="section">
       <div class="label-row"><span>Scroll direction</span></div>
       <div class="seg" id="viewSeg">
         <button data-v="auto">Auto</button><button data-v="v">Down ↓</button><button data-v="h">Across →</button>
       </div>
       <div class="slider-row"><span>Note spacing</span><input type="range" id="zoom" min="50" max="170" value="100" aria-label="Note spacing"></div>
-      <div class="muted small" style="margin-top:8px;line-height:1.45">Auto scrolls down in portrait and across in landscape. Drag the tab to scrub while paused; tap a note to hear and name it.</div>
+      <div class="muted small" style="margin-top:8px;line-height:1.45">Auto scrolls down in portrait and across in landscape. Drag the tab to scrub while paused; tap a note to hear it, name it, or move it.</div>
       <div class="muted small" style="margin-top:8px">File import uses alphaTab (MPL-2.0) and @tonejs/midi (MIT). App version <span class="appVer"></span></div>
     </div>
   </div>
@@ -328,7 +349,7 @@ input[type=range]{flex:1;accent-color:var(--accent);height:30px;min-width:0}
 })();
 (() => {
 'use strict';
-const APP_VERSION = '2026-11-15f';
+const APP_VERSION = '2026-11-15g';
 document.querySelectorAll('.appVer').forEach(el => { el.textContent = APP_VERSION; });
 /* =====================================================================
    SONG FORMAT (schemaVersion 1) — all beat values are in quarter notes
@@ -473,7 +494,8 @@ function prepSong(s){
   s._events = [];
   s.measures.forEach((m, i) => m.notes.forEach(nt => s._events.push({
     s: nt.string, f: nt.fret, beat: s._ms[i] + nt.beat, dur: nt.dur, midi: s._open[nt.string] + nt.fret,
-    tied: !!nt.tied, dead: !!nt.dead, slide: nt.slide || null, ring: nt.dur
+    tied: !!nt.tied, dead: !!nt.dead, slide: nt.slide || null, ring: nt.dur,
+    ref: nt, mIdx: i            // link back to the saved note, for editing
   })));
   s._events.sort((a, b2) => a.beat - b2.beat || a.s - b2.s);
   const lastOnString = {};
@@ -651,6 +673,7 @@ function beatAt(now){
 
 function play(){
   ensureAudio(); if (ctx.resume) ctx.resume();
+  if (selected){ selected = null; $('noteInfo').hidden = true; }
   let start = posBeat;
   if (start >= song._total - 0.001) start = 0;
   if (loopOn && (start < loopStartBeat() || start >= loopEndBeat())) start = loopStartBeat();
@@ -901,16 +924,142 @@ function hitTest(e){
     if (d < bd){ bd = d; best = ev; }
   }
   selected = best;
+  showNotePanel();
+  if (best && !best.dead){ ensureAudio(); if (ctx.resume) ctx.resume(); if (!playing) pluck(freqOf(best.midi), ctx.currentTime + 0.01, 0.9, master); }
+}
+function showNotePanel(){
   const info = $('noteInfo');
   clearTimeout(infoTimer);
-  if (!best){ info.hidden = true; return; }
-  info.innerHTML = best.dead ? `${esc(pcOf(song.tuning.strings[best.s]))} string · dead note`
-    : `${esc(pcOf(song.tuning.strings[best.s]))} string · fret ${best.f} → <b>${nameOf(best.midi)}</b>`;
+  if (!selected){ info.hidden = true; return; }
+  const b = selected;
+  $('noteText').innerHTML = b.dead ? `${esc(pcOf(song.tuning.strings[b.s]))} string · dead note`
+    : `${esc(pcOf(song.tuning.strings[b.s]))} string · fret ${b.f} → <b>${nameOf(b.midi)}</b>`;
+  const editing = !playing;
+  info.classList.toggle('edit', editing);
+  $('noteActs').hidden = !editing;
+  if (editing){
+    const acts = $('noteActs');
+    acts.querySelector('[data-n=down]').disabled = b.dead || !positionsFor(b.midi - 12).length;
+    acts.querySelector('[data-n=up]').disabled = b.dead || !positionsFor(b.midi + 12).length;
+    acts.querySelector('[data-n=string]').disabled = b.dead || positionsFor(b.midi).length < 2;
+    $('noteUndo').disabled = !undoStack.some(u => u.songId === song.id);
+  } else infoTimer = setTimeout(() => { info.hidden = true; selected = null; }, 4000);
   info.hidden = false;
-  infoTimer = setTimeout(() => { info.hidden = true; selected = null; }, 4000);
-  ensureAudio(); if (ctx.resume) ctx.resume();
-  if (!playing && !best.dead) pluck(freqOf(best.midi), ctx.currentTime + 0.01, 0.9, master);
 }
+
+/* ---------- editing saved songs ---------- */
+const undoStack = [];
+function positionsFor(pitch){
+  return song._open.map((o, si) => ({ si, fret: pitch - o })).filter(p => p.fret >= 0 && p.fret <= 24);
+}
+// best spot for a new pitch: same string if it fits, else the string whose fret is closest to where the hand was
+function placeNote(nt, pitch){
+  const c = positionsFor(pitch);
+  if (!c.length) return false;
+  const pick = c.find(p => p.si === nt.string) || c.reduce((a, b) => Math.abs(b.fret - nt.fret) < Math.abs(a.fret - nt.fret) ? b : a);
+  nt.string = pick.si; nt.fret = pick.fret;
+  return true;
+}
+// a tied note and its continuations move together
+function tieChain(ev){
+  const evs = song._events, i = evs.indexOf(ev), chain = [ev];
+  let cur = ev;
+  for (let j = i - 1; j >= 0 && cur.tied; j--) if (evs[j].s === cur.s){ chain.unshift(evs[j]); cur = evs[j]; }
+  cur = ev;
+  for (let j = i + 1; j < evs.length; j++) if (evs[j].s === cur.s){ if (!evs[j].tied) break; chain.push(evs[j]); cur = evs[j]; }
+  return chain;
+}
+function showInfo(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('info'); t.hidden = false; clearTimeout(showInfo.t); showInfo.t = setTimeout(() => { t.hidden = true; t.classList.remove('info'); }, 3500); }
+// Built-in and repo songs can't be changed, so the first edit makes a copy in your library.
+function ensureEditable(){
+  if (userSongs.includes(song)) return true;
+  const keepPos = posBeat, keepTempo = tempoPct;
+  const path = selected ? [selected.mIdx, song.measures[selected.mIdx].notes.indexOf(selected.ref)] : null;
+  const c = normalizeSong(stripDerived(song));
+  c.title = `${song.title} (my copy)`;
+  c.id = uniqueId(`${song.id}-my-copy`);
+  c.source = { type: song.source.type === 'builtin' ? 'json' : song.source.type, file: song.source.file || null };
+  userSongs.push(c);
+  if (!saveLibrary()){ userSongs.pop(); return false; }
+  loadSong(c); posBeat = keepPos; setTempo(keepTempo); persist();
+  if (path){ const ref = c.measures[path[0]].notes[path[1]]; selected = song._events.find(e => e.ref === ref) || null; }
+  showInfo(`Saved an editable copy: “${c.title}”.`);
+  return true;
+}
+function snapshot(){ undoStack.push({ songId: song.id, measures: JSON.stringify(song.measures) }); if (undoStack.length > 30) undoStack.shift(); }
+function commitEdit(){
+  const ref = selected && selected.ref;
+  song._ready = false; prepSong(song); sizeCanvas();
+  selected = ref ? song._events.find(e => e.ref === ref) || null : null;
+  saveLibrary();
+  $('songTitle').textContent = song.artist && song.source.type !== 'builtin' ? `${song.title} — ${song.artist}` : song.title;
+  syncEditUI();
+}
+function undoEdit(){
+  for (let i = undoStack.length - 1; i >= 0; i--){
+    if (undoStack[i].songId !== song.id) continue;
+    const u = undoStack.splice(i, 1)[0];
+    song.measures = JSON.parse(u.measures);
+    selected = null; $('noteInfo').hidden = true;
+    commitEdit(); showInfo('Undone.');
+    return;
+  }
+  showInfo('Nothing to undo.');
+}
+function editNote(action){
+  if (!selected || playing) return;
+  if (action === 'undo'){ undoEdit(); return; }
+  if (!ensureEditable()) return;
+  const ev = selected;
+  snapshot();
+  if (action === 'del'){
+    for (const c of tieChain(ev)){ const m = song.measures[c.mIdx]; m.notes.splice(m.notes.indexOf(c.ref), 1); }
+    selected = null; $('noteInfo').hidden = true;
+    commitEdit(); showInfo('Note deleted.'); return;
+  }
+  const chain = tieChain(ev);
+  let ok = true;
+  if (action === 'down' || action === 'up'){
+    const target = ev.midi + (action === 'up' ? 12 : -12);
+    for (const c of chain) ok = placeNote(c.ref, target) && ok;
+  } else if (action === 'string'){
+    const c = positionsFor(ev.midi).sort((a, b) => a.si - b.si);
+    const i = c.findIndex(p => p.si === ev.ref.string), next = c[(i + 1) % c.length];
+    for (const n of chain){ n.ref.string = next.si; n.ref.fret = next.fret; }
+  }
+  if (!ok){ undoStack.pop(); showInfo('That note can’t go there on this tuning.'); return; }
+  commitEdit(); showNotePanel();
+  if (selected && !selected.dead){ ensureAudio(); pluck(freqOf(selected.midi), ctx.currentTime + 0.01, 0.8, master); }
+}
+$('noteActs').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) editNote(b.dataset.n); });
+// whole song
+function editSong(mode){
+  if (!ensureEditable()) return;
+  snapshot();
+  const floor = Math.min(...song._open);
+  let moved = 0, stuck = 0;
+  for (const e of song._events){
+    if (e.dead) continue;
+    let target = e.midi;
+    if (mode === 'down') target -= 12;
+    else if (mode === 'up') target += 12;
+    else { while (target - 12 >= floor) target -= 12; }
+    if (target === e.midi) continue;
+    if (placeNote(e.ref, target)) moved++; else stuck++;
+  }
+  if (!moved){ undoStack.pop(); $('editMsg').textContent = mode === 'lowest' ? 'Every note is already as low as it can go.' : `No notes could move ${mode} on this tuning.`; return; }
+  selected = null; $('noteInfo').hidden = true;
+  commitEdit();
+  $('editMsg').textContent = `Moved ${moved} note(s)${stuck ? `; ${stuck} couldn’t go ${mode === 'up' ? 'higher' : 'lower'} on this tuning and were left as they were` : ''}. Saved.`;
+}
+function syncEditUI(){
+  $('editBadge').textContent = userSongs.includes(song) ? 'saved in your library' : 'edits make a copy';
+  $('songUndo').disabled = !undoStack.some(u => u.songId === song.id);
+}
+$('songDown').addEventListener('click', () => editSong('down'));
+$('songUp').addEventListener('click', () => editSong('up'));
+$('songLowest').addEventListener('click', () => editSong('lowest'));
+$('songUndo').addEventListener('click', () => { undoEdit(); $('editMsg').textContent = 'Undone.'; });
 
 /* ---------- main UI ---------- */
 const PLAY_SVG = '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.8v14.4a1 1 0 0 0 1.5.86l11.6-7.2a1 1 0 0 0 0-1.72L8.5 3.94A1 1 0 0 0 7 4.8z"/></svg>';
@@ -972,7 +1121,7 @@ $('viewSeg').addEventListener('click', e => { const v = e.target.closest('button
 $('zoom').addEventListener('input', e => { zoom = +e.target.value; sizeCanvas(); persist(); });
 function openSheet(id){ $(id).hidden = false; }
 function closeSheet(id){ $(id).hidden = true; }
-$('setBtn').addEventListener('click', () => openSheet('setSheet'));
+$('setBtn').addEventListener('click', () => { syncEditUI(); $('editMsg').textContent = 'Changes every note. To move a single note, pause and tap it on the tab.'; openSheet('setSheet'); });
 $('closeSet').addEventListener('click', () => closeSheet('setSheet'));
 for (const id of ['setSheet', 'libSheet']) $(id).addEventListener('click', e => { if (e.target === $(id)) closeSheet(id); });
 document.addEventListener('keydown', e => {
@@ -1794,7 +1943,8 @@ updatePlayBtn(); syncViewSeg();
 loadSong(song);
 requestAnimationFrame(frame);
 loadRepoSongs();
-window.__bassTab = { get song(){ return song; }, get imp(){ return imp; }, allSongs, validateSong }; // for debugging
+window.__bassTab = { get song(){ return song; }, get imp(){ return imp; }, allSongs, validateSong,
+  notePos: i => { const e = song._events[i]; const [x, y] = P(e.beat, e.s, posBeat); const r = cv.getBoundingClientRect(); return [r.left + x, r.top + y]; } }; // for debugging
 })();
 </script>
 </body>
